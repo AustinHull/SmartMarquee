@@ -6,6 +6,7 @@
 #include <ESPAsyncTCP.h>
 #include <ESPAsyncWebServer.h>
 // #include <Max72xxPanel.h>
+#include "LittleFS.h"
 
 #define ESP8266_LED 5
 
@@ -24,6 +25,8 @@ const int LED_PIN = 5; // Thing's onboard, green LED
 const int ANALOG_PIN = A0; // The only analog pin on the Thing
 const int DIGITAL_PIN = 12; // Digital pin to be read
 
+// Filesystem items should be used for handling relatively static but "heavy" items, such as images as well as HTML base template files (should be populated with data separately, likely via JS scripts
+
 AsyncWebServer server(80);
 
 void setup() 
@@ -35,11 +38,12 @@ void setup()
   if (WiFiSSID == NULL) {
     isConfigured = true;
     connectWiFi(); // Connect to local AP first if we have credentials stored
-    setupWiFi(isConfigured); 
+    setupWiFi();
   } else {
-    setupWiFi(isConfigured); // If we don't have an existing AP to connect to first, we start with setting up our own local network first-and-foremost...
+    setupWiFi(); // If we don't have an existing AP to connect to first, we start with setting up our own local network first-and-foremost...
     configureWifiBridgePage(); // Then configuring our local server to work in a User Configuration mode until connection has been established with an AP of the user.
   }
+  server.serveStatic("/", LittleFS, "/www").setDefaultFile("index.html");
   server.begin();
   setupMDNS();
 }
@@ -163,50 +167,33 @@ void loop()
 
 void configureWifiBridgePage() {
   // Send web page with input fields to client
-  server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+  WiFi.scanNetworks(true); // THIS is what's causing a Connection Reset/Crash!! due to the call blocking critical internal maintanence systems. ***TODO: USE ASYNC***
+  server.on("/configureHomeNetConnect.json", HTTP_GET, [](AsyncWebServerRequest *request){
     // Prepare the response, starting with common SUCCESS header
-    String response = "\u003C!DOCTYPE HTML\u003E\u003Chtml\u003E";
-
-    /*Note: Uncomment the line below to refresh automatically
-        *      for every 1 second. This is not ideal for large pages 
-        *      but for a simple read out, it is useful for monitoring 
-        *      your sensors and I/O pins. To adjust the fresh rate, 
-        *      adjust the value for content. For 30 seconds, simply 
-        *      change the value to 30.*/
-    // response += "<meta http-equiv='refresh' content='1'/>\r\n";  //auto refresh page
-
-    // IF/once we have a list of available networks, send a response back to the user that show them their options.
-    // TODO: Sort responses by SSID Radio Strength, properly format encryption/security information for user readability, and implement log-in authentication flow for user's home network configurations.
-    int networksScanned = -2;
-    while ((networksScanned = WiFi.scanComplete()) == -1) {
-      delay(500); // Scan is actively in progress, give a small time window for this operation to complete before checking again.
+    String output;
+		output = "{\"networks\":{\"ssids\":\[";
+		char 	ssid_buf[100];
+    int n = -3; // Just a throwaway initializer so we know it hasn't been touched by scan processes yet.
+    while( n < 0 && (n = WiFi.scanComplete()) < 0) {
+      delay(500); // We need to use this asynchronous scan-delay loopback until the scan is completed. The synchronous version can scan long enough that it blocks critical device operations, causing a crash-reset during page loads.
     }
-    if (networksScanned >= 0) {
-      response += "SmartMarquee's Available Networks:";
-      response += "\u003Cbr\u003E";  // Go to the next line.
-      response += "\u003Ctable\u003E\u003Cthead\u003E\u003Ctr\u003E\u003Cth colspan='2'\u003ESSID\u003C/th\u003E\u003Cth colspan='2'\u003EStrength\u003C/th\u003E\u003Cth colspan='2'\u003ESecurity\u003C/th\u003E\u003Cth colspan='2'\u003ESelect\u003C/th\u003E\u003C/tr\u003E\u003C/thead\u003E\u003Ctbody\u003E";
-      for (int i = 0; i < networksScanned; i++) {
-        // Hardware-supported firmware is capable of connecting to 2.4G 802.11 WiFi only, capable on connecting to unsecured, WEP, TKIP (WPA / PSK), CCMP (WPA2 / PSK), and 'Auto' (WPA / WPA2 / PSK) modes compatible with the aforementioned mode details. Any other encryptionTypes returned by Access Points retrieved will return 255, denoting an Unsupported status.
-        uint8_t encryptionType = WiFi.encryptionType(i);
-        int32_t signalStrengthValue = WiFi.RSSI(i);  // TODO: Integrate this into a GUI format allowing users to see relative signal integrity as a visual indicator (eg, "Signal Wave-bars filled"), without having to read or interpret a numerical RSSID value.
-        String ssid = WiFi.SSID(i);
-        String encryptionScheme = (encryptionType == ENC_TYPE_NONE ? "Unsecured" : (encryptionType == ENC_TYPE_AUTO ? "Auto(WPA/WPA2)" : (encryptionType == ENC_TYPE_WEP ? "WEP" : (encryptionType == ENC_TYPE_TKIP ? "WPA" : (encryptionType == ENC_TYPE_CCMP ? "WPA2" : "Unsupported")))));
-        // Very basic sanity check for escape characters in SSIDs. Not comprehensive!
-        for (int i = 0; i < ssid.length(); i++) {
-          if (ssid[i] == '\\') {
-            ssid[i] = ' ';
-            if (i < ssid.length() - 1) {
-              ssid[i+1] = ' ';
-            }
-          }
-        }
-        response += "\u003Ctr\u003E\u003Ctd colspan='2'\u003E\u003C/td\u003E\u003Ctd colspan='2'\u003E\u003C/td\u003E\u003Ctd colspan='2'\u003E" + encryptionScheme + "\u003Ctd\u003E\u003Ctd colspan='2'\u003E\u003Cinput type='submit'\u003E\u003C/td\u003E\u003C/tr\u003E";
-      }
+		if (n == 0) {
+      snprintf(ssid_buf, sizeof(ssid_buf), " {\"ssid\":\"%s\",\"encryptionType\":\"%d\",\"rssi\":\"-%d\"},", "none", 255, 0);
     } else {
-      response += "SmartMarquee Cannot Find Any Available Compatible Networks";
-    }
-    response += "</tbody></table></html>\n";
-    request->send_P(200, "text/html", response.c_str());
+      for (int i = 0; i < n; ++i) {
+        // Print SSID and RSSI for each network found and store it in our pointers:
+        snprintf(ssid_buf, sizeof(ssid_buf), " {\"ssid\":\"%s\",\"encryptionType\":\"%d\",\"rssi\":\"%d\"}", WiFi.SSID(i).c_str(), WiFi.encryptionType(i), WiFi.RSSI(i));
+        output.concat(ssid_buf);
+        if (i < n - 1) {
+          output.concat(",\n");
+        } else {
+          output.concat("\n");
+        }
+      }
+    };
+    output.concat("]}}");
+    Serial.println("Sending JSON response now");
+    request->send(200, "text/json", output);
   });
 }
 
@@ -263,9 +250,16 @@ void initHardware()
   digitalWrite(LED_PIN, HIGH);
   // Don't need to set ANALOG_PIN as input, 
   // that's all it can be.
+
+  // LittleFSConfig fsConfig;
+  // LittleFS.setConfig(fsConfig);
+  // uint8_t maxfiles = 255;
+  LittleFS.begin();
+  // LittleFS.begin();
 }
 
-void setupWiFi(bool isConfigured) {
+// Initializes the device-local Access Point for user to connect their own home network devices to in order to configure this device itself.
+void setupWiFi() {
   // Do a little work to get a unique-ish name. Append the
   // last two bytes of the MAC (HEX'd) to "ThingDev-":
   uint8_t mac[WL_MAC_ADDR_LENGTH];
@@ -282,9 +276,4 @@ void setupWiFi(bool isConfigured) {
     AP_NameChar[i] = AP_NameString.charAt(i);
 
   WiFi.softAP(AP_NameChar, WiFiAPPSK);
-
-  if (!isConfigured) {
-    // We're not yet connected to a local network for web connectivity - utilize async scan to take stock of our options. We'll use scanComplete() method to check in the device-server's runtime loop. For comprehensiveness (subject to change), search for hidden networks as well.
-    WiFi.scanNetworks(true, true);
-  }
 }
