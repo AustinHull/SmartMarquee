@@ -3,6 +3,11 @@
 SmartMarquee's Available Networks:
 <br>
 <body onload="connectToHomeAP()">
-<select id="ssidSelector"></select>
+<form name="wifiConnectForm" id="wifiConnectForm" onsubmit="document.getElementById('ssidConnectButton').click()" method="POST">
+<label for="ssidSelector">Network Selection:</label>
+<select name="ssidSelector" id="ssidSelector"></select>
+<div id="wifiPassField"></div>
+<button type="button" name="ssidConnectButton" id="ssidConnectButton" onclick="makeHomeNetworkConfigurationRequest()">Connect to Network</input>
+</form>
 </body>
 </html>
