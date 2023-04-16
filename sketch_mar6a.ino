@@ -7,16 +7,21 @@
 #include <ESPAsyncWebServer.h>
 // #include <Max72xxPanel.h>
 #include "LittleFS.h"
+#include "AsyncJson.h"
+#include "ArduinoJson.h"
+#include <EEPROM.h>
 
 #define ESP8266_LED 5
 
 //////////////////////
 // WiFi Definitions //
 //////////////////////
-char WiFiSSID[] = {};
-char WiFiPSK[] = {};
+char* WiFiSSID = new char[32];
+char* WiFiPSK = new char[64];
 char WiFiAPPSK[] = "sparkfun";
 bool isConfigured = false;
+bool isConnectedToHostAP = false;
+bool mDNSActive = false;
 
 /////////////////////
 // Pin Definitions //
@@ -24,6 +29,13 @@ bool isConfigured = false;
 const int LED_PIN = 5; // Thing's onboard, green LED
 const int ANALOG_PIN = A0; // The only analog pin on the Thing
 const int DIGITAL_PIN = 12; // Digital pin to be read
+
+// data source-structure to write from.
+struct {
+  char saved[9] = "notSaved";
+  char idStr[33] = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+  char pwrdStr[65] = "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx";
+} apConfig;
 
 // Filesystem items should be used for handling relatively static but "heavy" items, such as images as well as HTML base template files (should be populated with data separately, likely via JS scripts
 
@@ -34,15 +46,9 @@ void setup()
   initHardware();
   // Set WiFi mode to station-accesspoint
   WiFi.mode(WIFI_AP_STA);
-  // Serial.printf("isConfigured=%s\n", isConfigured);
-  if (WiFiSSID == NULL) {
-    isConfigured = true;
-    connectWiFi(); // Connect to local AP first if we have credentials stored
-    setupWiFi();
-  } else {
-    setupWiFi(); // If we don't have an existing AP to connect to first, we start with setting up our own local network first-and-foremost...
-    configureWifiBridgePage(); // Then configuring our local server to work in a User Configuration mode until connection has been established with an AP of the user.
-  }
+  // Check our EEPROM storage for previously-saved network config values prior to proceeding with our chosen launch flow states.
+  setupWiFi(); // We start with setting up our own local network first-and-foremost...
+  configureWifiBridgePage(); // Then configuring our local server to work in a User Configuration mode until connection has been established with an AP of the user.
   server.serveStatic("/", LittleFS, "/www").setDefaultFile("index.html");
   server.begin();
   setupMDNS();
@@ -50,124 +56,22 @@ void setup()
 
 void loop() 
 {
-  // server.handleClient();
-  // Check if a client has been connected.
-  // WiFiClient client = server.accept();
-  /*if (!client) {
-    return;
-  }*/
-
-  int networksScanned = -2;
-  if (/*(networksScanned = WiFi.scanComplete()) >= 0 && */!isConfigured) {
-    // Read the furst line of the request.
-    // String req = client.readStringUntil('\r');
-    // Serial.println(req);
-    // client.flush();
-
-    // Prepare the response, starting with common SUCCESS header
-    String response = "HTTP/1.1 200 OK\r\n";
-    response += "Content-Type: text/html\r\n\r\n";
-    response += "<!DOCTYPE HTML>\r\n<html>\r\n";
-
-    /*Note: Uncomment the line below to refresh automatically
-    *      for every 1 second. This is not ideal for large pages 
-    *      but for a simple read out, it is useful for monitoring 
-    *      your sensors and I/O pins. To adjust the fresh rate, 
-    *      adjust the value for content. For 30 seconds, simply 
-    *      change the value to 30.*/
-    // response += "<meta http-equiv='refresh' content='1'/>\r\n";  //auto refresh page
-
-    // IF/once we have a list of available networks, send a response back to the user that show them their options.
-    // TODO: Sort responses by SSID Radio Strength, properly format encryption/security information for user readability, and implement log-in authentication flow for user's home network configurations.
-    if (networksScanned > 0) {
-      response += "SmartMarquee's Available Networks:";
-      response += "<br>";  // Go to the next line.
-      response += "<table><thead><tr><th colspan='2'>SSID</th><th colspan='2'>Strength</th><th colspan='2'>Security</th><th colspan='2'>Select?</th></tr></thead><tbody>";
-      for (int i = 0; i < networksScanned; i++) {
-        // Hardware-supported firmware is capable of connecting to 2.4G 802.11 WiFi only, capable on connecting to unsecured, WEP, TKIP (WPA / PSK), CCMP (WPA2 / PSK), and 'Auto' (WPA / WPA2 / PSK) modes compatible with the aforementioned mode details. Any other encryptionTypes returned by Access Points retrieved will return 255, denoting an Unsupported status.
-        uint8_t encryptionType = WiFi.encryptionType(i);
-        int32_t signalStrengthValue = WiFi.RSSI(i); // TODO: Integrate this into a GUI format allowing users to see relative signal integrity as a visual indicator (eg, "Signal Wave-bars filled"), without having to read or interpret a numerical RSSID value.
-        response += "<tr><td colspan='2'>" +  WiFi.SSID(i) + "</td><td colspan='2'>" + signalStrengthValue + "</td><td colspan='2'>" + (encryptionType == ENC_TYPE_NONE ? "Unsecured" : (encryptionType == ENC_TYPE_AUTO ? "Auto(WPA/WPA2)" : (encryptionType == ENC_TYPE_WEP ? "WEP" :  (encryptionType == ENC_TYPE_TKIP ? "WPA" :  (encryptionType == ENC_TYPE_CCMP ? "WPA2" :  "Unsupported"))))) + "</td><td colspan='2'><input type='submit'></td></tr>";
-      }
-    } else {
-       response += "SmartMarquee Cannot Find Any Available Compatible Networks";
-    }
-    response += "</tbody></table></html>\n";
-
-    // Send the response to the client
-    // client.print(response);
-    delay(100);
-    // Serial.println("Client Disconnected");
-    return;
+  // Called to keep local mDNS instance running for users on the intranet.
+  if (mDNSActive) {
+    MDNS.update();
   }
 
-  // Read the furst line of the request.
-  // String req = client.readStringUntil('\r');
-  // Serial.println(req);
-  // client.flush();
-
-  //Match the request
-  /* int val = -1; // We'll use 'val' to keep track of both the
-                // request type (read/set) and value if set.
-  if (req.indexOf("/led/0") != -1) {
-    val = 1; // Will write LED high
-  } else if (req.indexOf("/led/1") != -1) {
-    val = 0;
-  } else if (req.indexOf("/read") != -1) {
-    val = -2; // Will print pin reads
-              // Otherwise request will be invalid. We'll say as much in HTML
-  } else {
-
+  if (isConfigured && !isConnectedToHostAP) {
+    connectWiFi();
+  } else if (!isConfigured && !isConnectedToHostAP) {
+    isConfigured = getDoesConfigExist();
   }
-
-  // Set GPIOs according to the request
-  if (val >= 0) {
-    digitalWrite(LED_PIN, val);
-  }
-
-  client.flush();
-
-  // Prepare the response, starting with common SUCCESS header
-  String response = "HTTP/1.1 200 OK\r\n";
-  response += "Content-Type: text/html\r\n\r\n";
-  response += "<!DOCTYPE HTML>\r\n<html>\r\n";
-
-  /*Note: Uncomment the line below to refresh automatically
-   *      for every 1 second. This is not ideal for large pages 
-   *      but for a simple read out, it is useful for monitoring 
-   *      your sensors and I/O pins. To adjust the fresh rate, 
-   *      adjust the value for content. For 30 seconds, simply 
-   *      change the value to 30.*/
-  /*response += "<meta http-equiv='refresh' content='1'/>\r\n"; //auto refresh page
-
-  // Things to write if we set the LED:
-  if (val >= 0) {
-    response += "LED is now ";
-    response += (val)?"off":"on";
-  } else if (val == -2) {
-    // If we're reading pins, print out those values:
-    response += "Analog Pin = ";
-    response += String(analogRead(ANALOG_PIN));
-    response += "<br>"; // Go to the next line.
-    response += "Digital Pin 12 = ";
-    response += String(digitalRead(DIGITAL_PIN));
-  } else {
-    response += "Invalid Request.<br> Try /led/1, /led/0, or /read.";
-  }
-  response += "</html>\n";
-
-  // Send the response to the client
-  // client.print(response);
-  delay(1);
-  // Serial.println("Client Disconnected");
-
-  // The client will actually be disconnected 
-  // when the function returns and 'client' object is detroyed */
+  delay(100);
 }
 
 void configureWifiBridgePage() {
   // Send web page with input fields to client
-  WiFi.scanNetworks(true); // THIS is what's causing a Connection Reset/Crash!! due to the call blocking critical internal maintanence systems. ***TODO: USE ASYNC***
+  WiFi.scanNetworks(true); // <-- THIS call must be done outside of async server handlers such as the one below - heed this warning lest ye enjoy soft-crashing your device AP repeatedly and often! Limitation is currently that this only makes one scan on device startup, can be resolved by refactors later.
   server.on("/configureHomeNetConnect.json", HTTP_GET, [](AsyncWebServerRequest *request){
     // Prepare the response, starting with common SUCCESS header
     String output;
@@ -195,6 +99,63 @@ void configureWifiBridgePage() {
     Serial.println("Sending JSON response now");
     request->send(200, "text/json", output);
   });
+
+  server.on("/signInToHomeNet.json", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
+    // By traversing and copying over data from the body per-byte, we ensure we're only copying over the amount of data expected by the request itself; helps keep extra garbage from being picked up after the good data under some circumstances.
+    char dataBuf[len];
+    for (size_t i = 0; i < len; i++) {
+      dataBuf[i] = data[i];
+    }
+    const size_t CAPACITY = JSON_OBJECT_SIZE(16);
+    StaticJsonDocument<CAPACITY> doc;
+    deserializeJson(doc, dataBuf);
+    JsonObject jsonObj = doc.as<JsonObject>();
+    if (jsonObj.containsKey("chosenSsid")) {
+      if (jsonObj.containsKey("enteredPassword")) {
+        // Store AP credentials for local reference, then attempt connection and verify success.
+        String ssid = jsonObj["chosenSsid"];
+        String password = jsonObj["enteredPassword"];
+        const char* charSsid = ssid.c_str();
+        const char* charPassword = password.c_str();
+        strcpy(WiFiSSID, charSsid);
+        strcpy(WiFiPSK, charPassword);
+        String requestJson = String((char*)WiFiSSID);
+        Serial.println("JSON params received from client-user: " + requestJson);
+        request->send(200,"text/json","{\"status\":\"success\"}");
+        isConfigured = true;
+        // commit 512 bytes of ESP8266 flash (for "EEPROM" emulation)
+        // this step actually loads the content (512 bytes) of flash into 
+        // a 512-byte-array cache in RAM
+        uint addr = 0;
+        strcpy(apConfig.saved, "xxxSaved");
+        strcpy(apConfig.idStr, charSsid);
+        strcpy(apConfig.pwrdStr, charPassword);
+        EEPROM.put(addr, apConfig);
+        EEPROM.commit();
+      } else {
+        request->send(500,"text/json","{\"status\":\"Missing Parameters (AP Password).\"}");
+      }
+    } else {
+      request->send(500,"text/json","{\"status\":\"Missing Parameters (AP SSID).\"}");
+    }
+  });
+}
+
+bool getDoesConfigExist() {
+  uint addr = 0;
+  // read bytes (i.e. sizeof(data) from "EEPROM"),
+  // in reality, reads from byte-array cache
+  // cast bytes into structure called data
+  EEPROM.get(addr, apConfig);
+
+  if (strcmp(apConfig.saved, "xxxSaved") == 0) {
+    strcpy(WiFiSSID, apConfig.idStr);
+    strcpy(WiFiPSK, apConfig.pwrdStr);
+    Serial.println("Test to: " + String(apConfig.idStr));
+    return true;
+  } else {
+    return false;
+  }
 }
 
 void connectWiFi() {
@@ -222,22 +183,28 @@ void connectWiFi() {
     // Add delays -- allowing the processor to perform other
     // tasks -- wherever possible.
   }
+  digitalWrite(LED_PIN, LOW); // Signify that we now have an established STAtion connection to user's local network.
+  isConnectedToHostAP = true;
   Serial.println("WiFi connected");  
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
+
+  // At this point, we can invoke some commands to convert STA + AP over to STA mode for further, relatively-seamless access via their local (AP) router network.
+  
 }
 
 void setupMDNS()
 {
   // Call MDNS.begin(<domain>) to set up mDNS to point to
   // "<domain>.local"
-  if (!MDNS.begin("thing")) 
+  if (!MDNS.begin("marquee")) 
   {
     Serial.println("Error setting up MDNS responder!");
     while(1) { 
       delay(1000);
     }
   }
+  mDNSActive = true;
   Serial.println("mDNS responder started");
 
 }
@@ -255,6 +222,7 @@ void initHardware()
   // LittleFS.setConfig(fsConfig);
   // uint8_t maxfiles = 255;
   LittleFS.begin();
+  EEPROM.begin(sizeof(apConfig));
   // LittleFS.begin();
 }
 
@@ -267,7 +235,7 @@ void setupWiFi() {
   String macID = String(mac[WL_MAC_ADDR_LENGTH - 2], HEX) +
                  String(mac[WL_MAC_ADDR_LENGTH - 1], HEX);
   macID.toUpperCase();
-  String AP_NameString = "ThingDev-" + macID;
+  String AP_NameString = "SmartMarquee-" + macID;
 
   char AP_NameChar[AP_NameString.length() + 1];
   memset(AP_NameChar, 0, AP_NameString.length() + 1);
