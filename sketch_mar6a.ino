@@ -66,23 +66,30 @@ void loop()
   } else if (!isConfigured && !isConnectedToHostAP) {
     isConfigured = getDoesConfigExist();
   }
-  delay(100);
 }
-
 void configureWifiBridgePage() {
   // Send web page with input fields to client
-  WiFi.scanNetworks(true); // <-- THIS call must be done outside of async server handlers such as the one below - heed this warning lest ye enjoy soft-crashing your device AP repeatedly and often! Limitation is currently that this only makes one scan on device startup, can be resolved by refactors later.
+  //WiFi.scanNetworks(true); // <-- THIS call must be done outside of async server handlers such as the one below - heed this warning lest ye enjoy soft-crashing your device AP repeatedly and often! Limitation is currently that this only makes one scan on device startup, can be resolved by refactors later.
   server.on("/configureHomeNetConnect.json", HTTP_GET, [](AsyncWebServerRequest *request){
+    int n = WiFi.scanComplete();
     // Prepare the response, starting with common SUCCESS header
     String output;
 		output = "{\"networks\":{\"ssids\":\[";
 		char 	ssid_buf[100];
-    int n = -3; // Just a throwaway initializer so we know it hasn't been touched by scan processes yet.
-    while( n < 0 && (n = WiFi.scanComplete()) < 0) {
-      delay(500); // We need to use this asynchronous scan-delay loopback until the scan is completed. The synchronous version can scan long enough that it blocks critical device operations, causing a crash-reset during page loads.
-    }
-		if (n == 0) {
+    // int n = -3; // Just a throwaway initializer so we know it hasn't been touched by scan processes yet.
+    /* while( n < 0 && (n = WiFi.scanComplete()) < 0) {
+      delay(1000); // We need to use this asynchronous scan-delay loopback until the scan is completed. The synchronous version can scan long enough that it blocks critical device operations, causing a crash-reset during page loads.
+      // Serial.println("Scan in progress");
+    } */
+    if(n == -2){
+      WiFi.scanNetworks(true);
+    } else if (n == 0) {
       snprintf(ssid_buf, sizeof(ssid_buf), " {\"ssid\":\"%s\",\"encryptionType\":\"%d\",\"rssi\":\"-%d\"},", "none", 255, 0);
+      Serial.println("Sending empty JSON response now");
+      WiFi.scanDelete();
+      if(WiFi.scanComplete() == -2){
+        WiFi.scanNetworks(true);
+      }
     } else {
       for (int i = 0; i < n; ++i) {
         // Print SSID and RSSI for each network found and store it in our pointers:
@@ -94,10 +101,14 @@ void configureWifiBridgePage() {
           output.concat("\n");
         }
       }
+      WiFi.scanDelete();
+      if(WiFi.scanComplete() == -2){
+        WiFi.scanNetworks(true);
+      }
     };
     output.concat("]}}");
     Serial.println("Sending JSON response now");
-    request->send(200, "text/json", output);
+    request->send(200, "application/json", output);
   });
 
   server.on("/signInToHomeNet.json", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){

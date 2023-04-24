@@ -5,6 +5,7 @@ function connectToHomeAP() {
 }
 
 function organizeResults(jsonData) {
+	console.log(JSON.stringify(jsonData))
 	for (const i in jsonData.networks.ssids) {
 		select = document.getElementById("ssidSelector");
 		ssid = jsonData.networks.ssids[i];
@@ -17,7 +18,7 @@ function organizeResults(jsonData) {
 		select.appendChild(option);
 	}
 	select = document.getElementById("ssidSelector");
-	if(select.options[select.selectedIndex].value) {
+	if(select.options[select.selectedIndex] !== null && select.options[select.selectedIndex] !== undefined && select.options[select.selectedIndex].value) {
 		// Associate a pop-in text entry boxe for user to enter their chosen AP's associated Password!
 		input = document.createElement('input');
 		input.type = "text";
