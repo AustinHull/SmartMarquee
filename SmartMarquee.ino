@@ -107,8 +107,10 @@ void configureWifiBridgePage() {
       }
     };
     output.concat("]}}");
-    Serial.println("Sending JSON response now");
+    Serial.println("Sending JSON response now.");
     request->send(200, "application/json", output);
+
+    // Maybe try and implement Dot-Matrix one-off print for when we successfully connect to a network OR served HTML page.
   });
 
   server.on("/signInToHomeNet.json", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
