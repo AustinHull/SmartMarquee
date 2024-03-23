@@ -212,25 +212,18 @@ void connectWiFi() {
   Serial.println("IP address: ");
   Serial.println(WiFi.localIP());
 
-  // At this point, we can invoke some commands to convert STA + AP over to STA mode for further, relatively-seamless access via their local (AP) router network.
+  // TODO-?: At this point, we can invoke some commands to convert STA + AP over to STA mode for further, relatively-seamless access via their local (AP) router network.
 
-  // Matrix display update to let uwser know of wifi connection?
-  // int16_t leftScrollIndex = 0;
+  // Matrix display update to let user know of wifi connection?
   String wifiConnectString = "WiFi Connected!";
-  int16_t textX = 0,
-          textMin = (int16_t)sizeof(wifiConnectString) * 6;
+  int16_t textX = 0;
   for (int offset = 0; offset < wifiConnectString.length() * 6; offset++) {
     matrix.clearScreen();
-    String boardText = "";
     matrix.setCursor(textX, 4);
-    // matrix.setFont(&FreeSans9pt7b);
-    // matrix.setTextSize(8); // Experiment with different text sizes...
     matrix.print(wifiConnectString);
     matrix.writeScreen();
     // Move text left (w/wrap), increase hue
-    // if((--textX) < textMin) textX = matrix.width();
     --textX;
-    // leftScrollIndex--;
     delay(200);
   }
 }
