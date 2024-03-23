@@ -12,6 +12,7 @@
 #include <EEPROM.h>
 #include "Adafruit_HT1632.h"
 #include "Adafruit_GFX.h"
+#include "Fonts/FreeSans9pt7b.h"
 
 #define ESP8266_LED 5
 
@@ -212,7 +213,19 @@ void connectWiFi() {
   Serial.println(WiFi.localIP());
 
   // At this point, we can invoke some commands to convert STA + AP over to STA mode for further, relatively-seamless access via their local (AP) router network.
-  
+
+  // Matrix display update to let uwser know of wifi connection?
+  int leftScrollIndex = 0;
+  for (int i = 36; i > 0; i--) {
+    matrix.setCursor(leftScrollIndex, 4);
+    // matrix.setFont(&FreeSans9pt7b);
+    // matrix.setTextSize(8); // Experiment with different text sizes...
+    matrix.print("WiFi Connected!");
+    matrix.writeScreen();
+    leftScrollIndex--;
+    delay(500);
+    matrix.clearScreen();
+  }
 }
 
 void setupMDNS()
@@ -237,6 +250,7 @@ void initHardware()
   matrix.begin(ADA_HT1632_COMMON_16NMOS);
   matrix.clearScreen();
   matrix.setTextWrap(false);
+  matrix.setRotation(0);
   pinMode(DIGITAL_PIN, INPUT_PULLUP);
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, HIGH);
