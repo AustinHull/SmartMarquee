@@ -10,6 +10,8 @@
 #include "AsyncJson.h"
 #include "ArduinoJson.h"
 #include <EEPROM.h>
+#include "Adafruit_HT1632.h"
+#include "Adafruit_GFX.h"
 
 #define ESP8266_LED 5
 
@@ -29,6 +31,10 @@ bool mDNSActive = false;
 const int LED_PIN = 5; // Thing's onboard, green LED
 const int ANALOG_PIN = A0; // The only analog pin on the Thing
 const int DIGITAL_PIN = 12; // Digital pin to be read
+const int MATRIX_DATA_PIN = 2;
+const int MATRIX_CS0_PIN = 4;
+const int MATRIX_WRITE_PIN = 0;
+const int MATRIX_CS1_PIN = 13;
 
 // data source-structure to write from.
 struct {
@@ -40,6 +46,9 @@ struct {
 // Filesystem items should be used for handling relatively static but "heavy" items, such as images as well as HTML base template files (should be populated with data separately, likely via JS scripts
 
 AsyncWebServer server(80);
+
+// Begin instantiation for Dot-Matrix LED Displays (uses Adafruit HT1632 multi-displays)
+Adafruit_HT1632LEDMatrix matrix = Adafruit_HT1632LEDMatrix(MATRIX_DATA_PIN, MATRIX_WRITE_PIN, MATRIX_CS0_PIN, MATRIX_CS1_PIN);
 
 void setup() 
 {
@@ -110,7 +119,7 @@ void configureWifiBridgePage() {
     Serial.println("Sending JSON response now.");
     request->send(200, "application/json", output);
 
-    // Maybe try and implement Dot-Matrix one-off print for when we successfully connect to a network OR served HTML page.
+    // Maybe try and implement Dot-Matrix one-off print for when we successfully connect to a network OR served HTML page.Adafruit HT1632
   });
 
   server.on("/signInToHomeNet.json", HTTP_POST, [](AsyncWebServerRequest *request){}, NULL, [](AsyncWebServerRequest *request, uint8_t *data, size_t len, size_t index, size_t total){
@@ -225,6 +234,9 @@ void setupMDNS()
 void initHardware()
 {
   Serial.begin(115200);
+  matrix.begin(ADA_HT1632_COMMON_16NMOS);
+  matrix.clearScreen();
+  matrix.setTextWrap(false);
   pinMode(DIGITAL_PIN, INPUT_PULLUP);
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, HIGH);
