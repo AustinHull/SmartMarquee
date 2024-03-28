@@ -14,8 +14,6 @@
 #include "Adafruit_GFX.h"
 #include "Fonts/FreeSans9pt7b.h"
 
-#define ESP8266_LED 5
-
 //////////////////////
 // WiFi Definitions //
 //////////////////////
@@ -31,11 +29,12 @@ bool mDNSActive = false;
 /////////////////////
 const int LED_PIN = 5; // Thing's onboard, green LED
 const int ANALOG_PIN = A0; // The only analog pin on the Thing
-const int DIGITAL_PIN = 12; // Digital pin to be read
+// const int DIGITAL_PIN = 12; // Digital pin to be read
 const int MATRIX_DATA_PIN = 2;
 const int MATRIX_CS0_PIN = 4;
 const int MATRIX_WRITE_PIN = 0;
 const int MATRIX_CS1_PIN = 13;
+const int MATRIX_CS2_PIN = 12;
 
 // data source-structure to write from.
 struct {
@@ -49,7 +48,7 @@ struct {
 AsyncWebServer server(80);
 
 // Begin instantiation for Dot-Matrix LED Displays (uses Adafruit HT1632 multi-displays)
-Adafruit_HT1632LEDMatrix matrix = Adafruit_HT1632LEDMatrix(MATRIX_DATA_PIN, MATRIX_WRITE_PIN, MATRIX_CS0_PIN, MATRIX_CS1_PIN);
+Adafruit_HT1632LEDMatrix matrix = Adafruit_HT1632LEDMatrix(MATRIX_DATA_PIN, MATRIX_WRITE_PIN, MATRIX_CS0_PIN, MATRIX_CS1_PIN, MATRIX_CS2_PIN);
 
 void setup() 
 {
@@ -251,7 +250,7 @@ void initHardware()
   matrix.clearScreen();
   matrix.setTextWrap(false);
   matrix.setRotation(0);
-  pinMode(DIGITAL_PIN, INPUT_PULLUP);
+  // pinMode(DIGITAL_PIN, INPUT_PULLUP);
   pinMode(LED_PIN, OUTPUT);
   digitalWrite(LED_PIN, HIGH);
   // Don't need to set ANALOG_PIN as input, 
