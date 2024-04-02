@@ -6,6 +6,9 @@ function connectToHomeAP() {
 
 function organizeResults(jsonData) {
 	console.log(JSON.stringify(jsonData))
+	if (jsonData.networks.ssids.length < 1) {
+		window.location.reload(1); // This seems to work for preventing a full-null initial page load when device is scanning around for SSIDs in the use area.
+	}
 	for (const i in jsonData.networks.ssids) {
 		select = document.getElementById("ssidSelector");
 		ssid = jsonData.networks.ssids[i];
